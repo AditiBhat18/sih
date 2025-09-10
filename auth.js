@@ -1,27 +1,95 @@
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const express = require('express');
+const router = express.Router();
+const { body } = require('express-validator');
+const authController = require('../controllers/authController');
+const auth = require('../middleware/auth');
 
-const auth = async (req, res, next) => {
-  const token = req.header('x-auth-token') || req.header('Authorization')?.replace('Bearer ', '');
+// @route   POST /api/auth/register
+// @desc    Register a new user
+// @access  Public
+router.post('/register', [
+  body('name')
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Name must be between 2 and 50 characters'),
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please include a valid email'),
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long'),
+  body('role')
+    .optional()
+    .isIn(['student', 'teacher', 'admin'])
+    .withMessage('Role must be student, teacher, or admin')
+], authController.register);
 
-  if (!token) {
-    return res.status(401).json({ message: 'No token, authorization denied' });
-  }
+// @route   POST /api/auth/login
+// @desc    Login user
+// @access  Public
+router.post('/login', [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please include a valid email'),
+  body('password')
+    .exists()
+    .withMessage('Password is required')
+], authController.login);
 
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret');
-    const user = await User.findById(decoded.id).select('-password');
-    
-    if (!user) {
-      return res.status(401).json({ message: 'Token is not valid' });
-    }
+// @route   GET /api/auth/profile
+// @desc    Get current user profile
+// @access  Private
+router.get('/profile', auth, authController.getProfile);
 
-    req.user = user;
-    next();
-  } catch (err) {
-    console.error('Token verification error:', err);
-    res.status(401).json({ message: 'Token is not valid' });
-  }
-};
+// @route   PUT /api/auth/profile
+// @desc    Update user profile
+// @access  Private
+router.put('/profile', [
+  auth,
+  body('name')
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Name must be between 2 and 50 characters'),
+  body('email')
+    .optional()
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please include a valid email')
+], authController.updateProfile);
 
-module.exports = auth;
+// @route   POST /api/auth/change-password
+// @desc    Change user password
+// @access  Private
+router.post('/change-password', [
+  auth,
+  body('currentPassword')
+    .exists()
+    .withMessage('Current password is required'),
+  body('newPassword')
+    .isLength({ min: 6 })
+    .withMessage('New password must be at least 6 characters long')
+], authController.changePassword);
+
+// @route   POST /api/auth/forgot-password
+// @desc    Send password reset email
+// @access  Public
+router.post('/forgot-password', [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please include a valid email')
+], authController.forgotPassword);
+
+// @route   POST /api/auth/reset-password/:token
+// @desc    Reset password with token
+// @access  Public
+router.post('/reset-password/:token', [
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long')
+], authController.resetPassword);
+
+module.exports = router;
